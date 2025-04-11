@@ -1,46 +1,66 @@
 #!/bin/bash
 
-echo "Instalando dependências..."
-pip install -r requirements.txt
+# Configurações
+VENV_DIR="venv"
+PYTHON_SCRIPT="etl.py"
+PYTHON_VERSION=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1-2)  # Obtém 3.12
 
-if [ $? -ne 0 ]; then
-    echo "Erro ao instalar dependências"
-    exit 1
+# 1. Verifica e instala os pacotes necessários
+echo "Verificando dependências do sistema..."
+if ! command -v python3 &> /dev/null; then
+    echo "Python3 não encontrado. Instalando..."
+    sudo apt update && sudo apt install -y python3
 fi
 
-mkdir -p ~/raw_files ~/trusted_files
+# Instala o pacote específico para a versão do Python
+echo "Instalando python${PYTHON_VERSION}-venv..."
+sudo apt install -y "python${PYTHON_VERSION}-venv" python3-pip
 
-if [ $? -ne 0 ]; then
-    echo "Erro ao criar diretórios"
+# 2. Cria o ambiente virtual
+echo "Criando ambiente virtual em $VENV_DIR..."
+python3 -m venv "$VENV_DIR" || {
+    echo "Falha ao criar ambiente virtual. Tentando método alternativo..."
+    python3 -m venv --without-pip "$VENV_DIR"
+    source "$VENV_DIR/bin/activate"
+    curl https://bootstrap.pypa.io/get-pip.py | python
+    deactivate
+}
+
+# 3. Ativa o ambiente virtual
+echo "Ativando ambiente virtual..."
+source "$VENV_DIR/bin/activate" || {
+    echo "Falha crítica ao ativar o ambiente virtual"
     exit 1
+}
+
+# 4. Verifica se está no ambiente virtual
+if [ -z "$VIRTUAL_ENV" ]; then
+    echo "AVISO: Ambiente virtual pode não estar ativado corretamente"
+    echo "Tentando continuando mesmo assim..."
 fi
 
-echo "Iniciando pipeline ETL..."
-echo "========================="
+# 5. Atualiza pip
+echo "Atualizando pip..."
+pip install --upgrade pip
 
-echo "Executando download_from_raw.py"
-python3 download_from_raw.py
-
-if [ $? -ne 0 ]; then
-    echo "Erro no download_from_raw.py"
-    exit 1
+# 6. Instala dependências
+if [ -f "requirements.txt" ]; then
+    echo "Instalando dependências..."
+    pip install -r requirements.txt
+else
+    echo "AVISO: Arquivo requirements.txt não encontrado"
 fi
 
-echo "Executando data_handling.py"
-python3 data_handling.py
-
-if [ $? -ne 0 ]; then
-    echo "Erro no data_handling.py"
-    exit 1
+# 7. Executa o script
+if [ -f "$PYTHON_SCRIPT" ]; then
+    echo "Executando $PYTHON_SCRIPT..."
+    python "$PYTHON_SCRIPT"
+else
+    echo "ERRO: Arquivo $PYTHON_SCRIPT não encontrado"
 fi
 
-echo "Executando upload_to_trusted.py"
-python3 upload_to_trusted.py
+# 8. Desativa o ambiente
+echo "Desativando ambiente virtual..."
+deactivate
 
-if [ $? -ne 0 ]; then
-    echo "Erro no upload_to_trusted.py"
-    exit 1
-fi
-
-echo "========================="
-echo "Pipeline concluída com sucesso!"
+echo "Processo concluído!"
